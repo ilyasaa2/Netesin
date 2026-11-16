@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NETESIN - Sistem Inkubator Telur Entok Terintegrasi IoT & AI</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Chart.js Offline Local Bundle -->
+  <script src="js/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- HEADER UTAMA -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-logo-icon" aria-hidden="true">🥚</div>
+        <div class="brand-info">
+          <h1>NETESIN (Smart Incubator System)</h1>
+          <p>Kolaborasi 3 Matkul: IoT, Kecerdasan Buatan, dan T. Sistem Terintegrasi (UNTIDAR 2026)</p>
+        </div>
+      </div>
+
+      <div class="header-meta">
+        <div id="wsStatusPill" class="meta-pill status-connected">
+          <span class="status-dot"></span>
+          <span id="wsStatusText">Sistem Terhubung</span>
+        </div>
+
+        <div id="hardwareModePill" class="meta-pill hardware-mode">
+          <span>Perangkat:</span>
+          <strong id="hardwareModeText">ESP32 DevKit V1</strong>
+        </div>
+
+        <div class="meta-pill day-badge">
+          <span>Inkubasi:</span>
+          <strong id="batchDayBadge">Hari ke-8 / 35 Hari</strong>
+        </div>
+
+        <button id="themeToggleBtn" class="btn-icon" aria-label="Ganti Tema Tampilan (Terang / Gelap)" title="Ganti Tema">
+          <span id="themeIcon">🌙</span>
+        </button>
+
+        <a href="/api/export/csv" class="btn-secondary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem; text-decoration: none;" download>
+          <span>📥 Unduh CSV</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- BANNER PERINGATAN ANOMALI DINAMIS (AI ANOMALY ALERT) -->
+    <div id="anomalyAlertBanner" class="alert-banner" style="display: none;" role="alert">
+      <div style="font-size: 1.4rem;" aria-hidden="true">⚠️</div>
+      <div style="flex: 1;">
+        <strong id="anomalyTitle" style="font-size: 0.95rem; display: block; margin-bottom: 0.2rem;">Peringatan Anomali Terdeteksi</strong>
+        <p id="anomalyMessage" style="font-size: 0.85rem; margin-bottom: 0.35rem;"></p>
+        <span id="anomalyAction" style="font-size: 0.8rem; font-weight: 700; background-color: rgba(255,255,255,0.7); padding: 0.15rem 0.5rem; border-radius: 4px; display: inline-block;"></span>
+      </div>
+      <button id="dismissAlertBtn" class="btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;" aria-label="Tutup Peringatan">Tutup</button>
+    </div>
+
+    <!-- TAB NAVIGASI UTAMA -->
+    <nav class="tab-nav" aria-label="Navigasi Modul Utama">
+      <button class="tab-btn active" data-tab="tab-dashboard" aria-selected="true" role="tab">
+        <span>📊 Dashboard Monitoring</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-iot" aria-selected="false" role="tab">
+        <span>⚡ Modul 1: Internet of Things</span>
+        <span class="badge-tag">ESP32</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-ai" aria-selected="false" role="tab">
+        <span>🧠 Modul 2: Kecerdasan Buatan</span>
+        <span class="badge-tag">AI / ML</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-integration" aria-selected="false" role="tab">
+        <span>🌐 Modul 3: Sistem Terintegrasi</span>
+        <span class="badge-tag">Full-Stack</span>
+      </button>
+    </nav>
+
+    <!-- ====================================================================== -->
+    <!-- TAB 1: DASHBOARD MONITORING UTAMA                                       -->
+    <!-- ====================================================================== -->
+    <section id="tab-dashboard" class="tab-content" role="tabpanel">
+      <!-- 4 METRIK TELEMETRI KRUSIAL -->
+      <div class="grid-4" style="margin-bottom: 1.25rem;">
+        <!-- Card 1: Suhu Inti DS18B20 -->
+        <div class="dashboard-card card-thermal">
+          <div class="card-header">
+            <span class="metric-label">Suhu Inti Telur (DS18B20)</span>
+            <span class="badge-tag">GPIO 4</span>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value-wrap">
+              <span id="valTempDS18B20" class="metric-number">37.84</span>
+              <span class="metric-unit">°C</span>
+            </div>
+            <div id="badgeTempDS18B20" class="metric-indicator" style="color: var(--emerald-primary);">
+              <span>● Target Ideal (37.5 - 38.5°C)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Suhu Udara DHT22 -->
+        <div class="dashboard-card card-thermal">
+          <div class="card-header">
+            <span class="metric-label">Suhu Udara Atas (DHT22)</span>
+            <span class="badge-tag">GPIO 5</span>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value-wrap">
+              <span id="valTempDHT22" class="metric-number">37.72</span>
+              <span class="metric-unit">°C</span>
+            </div>
+            <div class="metric-indicator" style="color: var(--text-muted);">
+              <span>Sirkulasi Panas Atas</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 3: Kelembapan DHT22 -->
+        <div class="dashboard-card card-moisture">
+          <div class="card-header">
+            <span class="metric-label">Kelembapan Udara (DHT22)</span>
+            <span class="badge-tag">GPIO 5</span>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value-wrap">
+              <span id="valHumidity" class="metric-number">62.4</span>
+              <span class="metric-unit">% RH</span>
+            </div>
+            <div id="badgeHumidity" class="metric-indicator" style="color: var(--sky-moisture);">
+              <span>● Target Fase Awal (55 - 65%)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 4: AI Hatching Success Index -->
+        <div class="dashboard-card card-ai-health">
+          <div class="card-header">
+            <span class="metric-label">Prediksi Daya Tetas (AI)</span>
+            <span class="badge-tag">HSI Model</span>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value-wrap">
+              <span id="valHSI" class="metric-number">94.5</span>
+              <span class="metric-unit">%</span>
+            </div>
+            <div id="badgeHSI" class="metric-indicator" style="color: var(--emerald-primary);">
+              <span>● Status Sangat Optimal</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GRAFIK TELEMETRI REAL-TIME -->
+      <div class="grid-2" style="margin-bottom: 1.25rem;">
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">📈 Kurva Suhu Inkubator Real-Time</h2>
+              <span class="card-subtitle">Perbandingan Sensor DS18B20 vs DHT22 terhadap rentang batas</span>
+            </div>
+          </div>
+          <div style="position: relative; height: 260px; width: 100%;">
+            <canvas id="tempChart" aria-label="Grafik telemetri suhu real-time"></canvas>
+          </div>
+        </div>
+
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">💧 Kurva Kelembapan Relatif (RH)</h2>
+              <span class="card-subtitle">Fluktuasi kelembapan udara ruang inkubasi dan injeksi humidifier</span>
+            </div>
+          </div>
+          <div style="position: relative; height: 260px; width: 100%;">
+            <canvas id="humidityChart" aria-label="Grafik telemetri kelembapan real-time"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATUS AKTUAL AKTUATOR & TILTING SERVO -->
+      <div class="grid-3" style="margin-bottom: 1.25rem;">
+        <!-- Card Aktuator Status -->
+        <div class="dashboard-card" style="grid-column: span 2;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">⚙️ Status Operasional Aktuator Fisik</h2>
+              <span class="card-subtitle">Kondisi relay pemanas, fan pendingin, pengkabut ultrasonik, dan buzzer</span>
+            </div>
+            <span id="controlModePill" class="badge-tag" style="background-color: var(--emerald-subtle); color: var(--emerald-primary);">MODE OTOMATIS</span>
+          </div>
+
+          <div class="actuator-row">
+            <!-- Lampu Pijar -->
+            <div id="actuatorCardHeater" class="actuator-item active-heater">
+              <div class="actuator-title">
+                <span>🔥 Lampu Pijar (5W x 2)</span>
+                <span id="badgeHeater" class="badge-status on">AKTIF</span>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-muted);">Relay GPIO 26: Pemanas utama inkubator</p>
+            </div>
+
+            <!-- Fan DC 6010 -->
+            <div id="actuatorCardFan" class="actuator-item active-fan">
+              <div class="actuator-title">
+                <span>💨 Fan Sirkulasi DC</span>
+                <span id="badgeFan" class="badge-status on">AKTIF</span>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-muted);">Driver GPIO 27: Meratakan sebaran panas</p>
+            </div>
+
+            <!-- Modul Humidifier -->
+            <div id="actuatorCardHumidifier" class="actuator-item">
+              <div class="actuator-title">
+                <span>☁️ Humidifier Ultrasonic</span>
+                <span id="badgeHumidifier" class="badge-status off">MATI</span>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-muted);">MOSFET GPIO 25: Pengkabutan kelembapan</p>
+            </div>
+
+            <!-- Buzzer Alarm -->
+            <div id="actuatorCardBuzzer" class="actuator-item">
+              <div class="actuator-title">
+                <span>🔔 Alarm Buzzer</span>
+                <span id="badgeBuzzer" class="badge-status off">NORMAL</span>
+              </div>
+              <p style="font-size: 0.75rem; color: var(--text-muted);">GPIO 14: Indikator audio kondisi abnormal</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card Pembalik Telur SG90 Tilting -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">🔄 Pembalik Telur (SG90)</h2>
+              <span class="card-subtitle">GPIO 18: Mekanisme 1 poros miring 45°</span>
+            </div>
+            <span id="servoAngleBadge" class="badge-tag">+45° Kanan</span>
+          </div>
+
+          <!-- Visualizer Animasi Rak Kemiringan Telur -->
+          <div class="tray-visualizer-container">
+            <div id="trayBarVisual" class="egg-tray-bar" style="transform: rotate(20deg);">
+              <div class="tray-egg" title="Telur Entok 1"></div>
+              <div class="tray-egg" title="Telur Entok 2"></div>
+              <div class="tray-egg" title="Telur Entok 3"></div>
+              <div class="tray-egg" title="Telur Entok 4"></div>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.85rem; font-size: 0.8rem;">
+            <span style="color: var(--text-muted);">Putar berikutnya:</span>
+            <strong id="nextTurnCountdown" style="font-family: monospace; font-size: 0.95rem;">01:45:12</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- RINGKASAN BATCH AKTIF -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">📋 Ringkasan Siklus Batch Inkubasi Entok</h2>
+            <span class="card-subtitle">Parameter biologis dan jadwal penetasan telur entok (Muscovy duck)</span>
+          </div>
+          <button id="quickEditBatchBtn" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">Ubah Batch</button>
+        </div>
+
+        <div class="grid-3" style="gap: 1rem;">
+          <div style="background-color: var(--bg-elevated); padding: 0.85rem; border-radius: 8px;">
+            <span class="metric-label">Kode & Ras Telur</span>
+            <p id="batchTitle" style="font-weight: 700; margin-top: 0.25rem;">Inkubasi Telur Entok Manila Super</p>
+            <span id="batchBreed" style="font-size: 0.8rem; color: var(--text-muted);">Entok Manila (Cairina moschata) - 30 Butir</span>
+          </div>
+
+          <div style="background-color: var(--bg-elevated); padding: 0.85rem; border-radius: 8px;">
+            <span class="metric-label">Perjalanan Siklus Biologis</span>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 0.25rem;">
+              <span>Hari ke-<strong id="batchCurrentDay">8</strong></span>
+              <span style="color: var(--text-muted);">Total: 35 Hari</span>
+            </div>
+            <!-- Progress Bar -->
+            <div style="width: 100%; height: 8px; background-color: var(--border-color); border-radius: 4px; margin-top: 0.5rem; overflow: hidden;">
+              <div id="batchProgressBar" style="width: 23%; height: 100%; background-color: var(--emerald-primary); border-radius: 4px; transition: width 0.3s ease;"></div>
+            </div>
+          </div>
+
+          <div style="background-color: var(--bg-elevated); padding: 0.85rem; border-radius: 8px;">
+            <span class="metric-label">Estimasi Menetas & Catatan Fase</span>
+            <p id="batchHatchDate" style="font-weight: 700; margin-top: 0.25rem; color: var(--emerald-primary);">12 Desember 2026</p>
+            <span id="stageBrief" style="font-size: 0.8rem; color: var(--text-muted);">Fase Awal: Jaga kestabilan suhu 37.8°C dan pembalikan 4 jam sekali.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- TAB 2: MODUL 1 - INTERNET OF THINGS (IoT)                              -->
+    <!-- ====================================================================== -->
+    <section id="tab-iot" class="tab-content" style="display: none;" role="tabpanel">
+      <!-- PENJELASAN INTEGRASI MATKUL IOT -->
+      <div class="dashboard-card" style="margin-bottom: 1.25rem; border-left: 4px solid var(--sky-moisture);">
+        <h2 class="card-title">⚡ Capaian Mata Kuliah: Internet of Things (IoT)</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem;">
+          Implementasi perangkat keras berbasis mikrokontroler <strong>ESP32 DevKit V1</strong> dengan sensor suhu presisi ganda 
+          (DS18B20 waterproof & DHT22), aktuator relay pemanas, fan DC 6010, servo SG90 tilting grid, modul ultrasonik kabut 5V, 
+          dan display OLED 0.96" I2C. Komunikasi data real-time dua arah menggunakan protokol HTTP REST API dan WebSocket.
+        </p>
+      </div>
+
+      <!-- PANEL KENDALI AKTUATOR DUA ARAH (MANUAL & OTOMATIS) -->
+      <div class="grid-2" style="margin-bottom: 1.25rem;">
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">🎛️ Pusat Kendali Aktuator & Saklar Override</h3>
+              <span class="card-subtitle">Kendalikan aktuator fisik langsung dari browser ke ESP32</span>
+            </div>
+            <!-- Switch Mode Otomatis / Manual -->
+            <label class="switch-label">
+              <input type="checkbox" id="modeToggleCheckbox" class="switch-input">
+              <span class="switch-slider"></span>
+              <span id="modeToggleLabel" style="font-size: 0.85rem; font-weight: 700;">Mode Manual</span>
+            </label>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Kontrol Pemanas -->
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background-color: var(--bg-elevated); border-radius: 8px;">
+              <div>
+                <strong>Lampu Pijar Pemanas (GPIO 26)</strong>
+                <p style="font-size: 0.75rem; color: var(--text-muted);">Relay 2x Lampu Pijar 5 Watt</p>
+              </div>
+              <div class="btn-group">
+                <button id="btnHeaterOn" class="btn-secondary" style="font-size: 0.8rem;">Nyalakan</button>
+                <button id="btnHeaterOff" class="btn-secondary" style="font-size: 0.8rem;">Matikan</button>
+              </div>
+            </div>
+
+            <!-- Kontrol Fan DC -->
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background-color: var(--bg-elevated); border-radius: 8px;">
+              <div>
+                <strong>Kipas Sirkulasi Fan DC 6010 (GPIO 27)</strong>
+                <p style="font-size: 0.75rem; color: var(--text-muted);">Sirkulasi udara pemerata suhu</p>
+              </div>
+              <div class="btn-group">
+                <button id="btnFanOn" class="btn-secondary" style="font-size: 0.8rem;">Nyalakan</button>
+                <button id="btnFanOff" class="btn-secondary" style="font-size: 0.8rem;">Matikan</button>
+              </div>
+            </div>
+
+            <!-- Kontrol Humidifier -->
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background-color: var(--bg-elevated); border-radius: 8px;">
+              <div>
+                <strong>Modul Humidifier Ultrasonic 5V (GPIO 25)</strong>
+                <p style="font-size: 0.75rem; color: var(--text-muted);">Pengaturan kabut kelembapan nisbi</p>
+              </div>
+              <div class="btn-group">
+                <button id="btnHumidifierOn" class="btn-secondary" style="font-size: 0.8rem;">Nyalakan</button>
+                <button id="btnHumidifierOff" class="btn-secondary" style="font-size: 0.8rem;">Matikan</button>
+              </div>
+            </div>
+
+            <!-- Kontrol Servo Pembalik Telur -->
+            <div style="padding: 0.75rem; background-color: var(--bg-elevated); border-radius: 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                <div>
+                  <strong>Motor Servo SG90 Pembalik Telur (GPIO 18)</strong>
+                  <p style="font-size: 0.75rem; color: var(--text-muted);">Poros mekanis tilting grid sudut miring</p>
+                </div>
+                <button id="btnRotateNow" class="btn-primary" style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">🔄 Putar Sekarang</button>
+              </div>
+              <div class="btn-group" style="justify-content: center; margin-top: 0.5rem;">
+                <button id="btnServoLeft" class="btn-secondary" style="font-size: 0.8rem; flex: 1;">-45° (Miring Kiri)</button>
+                <button id="btnServoFlat" class="btn-secondary" style="font-size: 0.8rem; flex: 1;">0° (Posisi Datar)</button>
+                <button id="btnServoRight" class="btn-secondary" style="font-size: 0.8rem; flex: 1;">+45° (Miring Kanan)</button>
+              </div>
+            </div>
+
+            <!-- Kontrol Buzzer Alarm -->
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background-color: var(--bg-elevated); border-radius: 8px;">
+              <div>
+                <strong>Buzzer Audio Alarm (GPIO 14)</strong>
+                <p style="font-size: 0.75rem; color: var(--text-muted);">Uji suara frekuensi piezo buzzer</p>
+              </div>
+              <button id="btnTestBuzzer" class="btn-secondary" style="font-size: 0.8rem;">🔊 Bunyikan Buzzer</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PENAMPANG FISIK RUANG INKUBATOR & SKEMA PIN -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">📦 Prototipe Fisik & Digital Twin Inkubator</h3>
+              <span class="card-subtitle">Sinkronisasi visual antara perangkat miniatur nyata dengan sistem pemantauan digital</span>
+            </div>
+            <span class="badge-tag" style="background-color: var(--amber-subtle); color: var(--amber-heat);">Sesuai Prototipe Nyata</span>
+          </div>
+
+          <!-- DUAL VIEW: FOTO PROTOTIPE FISIK & DIGITAL TWIN INTERAKTIF -->
+          <div class="grid-2" style="gap: 0.85rem; margin-bottom: 1rem;">
+            <!-- Sisi Kiri: Foto Nyata Prototipe -->
+            <div style="background-color: #0b1324; border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 0.5rem; display: block;">
+                📷 Prototipe Miniatur Fisik Anda
+              </span>
+              <div style="position: relative; border-radius: 6px; overflow: hidden; height: 210px; background-color: #000;">
+                <img src="img/prototype.jpg" alt="Foto Prototipe Fisik Inkubator Telur Entok" style="width: 100%; height: 100%; object-fit: cover;">
+                <!-- Overlay Keterangan Komponen -->
+                <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.75); color: #f87171; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-family: monospace; font-weight: 700;">
+                  Panel 7-Segment: 29.2°C
+                </div>
+                <div style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.75); color: #fbbf24; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;">
+                  🔥 Pemanas Lampu Kanan
+                </div>
+                <div style="position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.75); color: #4ade80; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;">
+                  🥚 Rak Kayu Kawat Ram Hijau
+                </div>
+              </div>
+              <p style="font-size: 0.72rem; color: #94a3b8; margin-top: 0.45rem;">
+                Komponen teridentifikasi: Display suhu digital 7-segment, timer controller, probe gantung DS18B20 tengah, lampu pijar kanan, dan tuas rak pembalik.
+              </p>
+            </div>
+
+            <!-- Sisi Kanan: Digital Twin SVG Interaktif -->
+            <div style="background-color: #0b1324; border-radius: 8px; padding: 0.75rem; border: 1px solid var(--border-color); display: flex; flex-direction: column;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #38bdf8; text-transform: uppercase; margin-bottom: 0.5rem; display: block;">
+                🔄 Digital Twin Real-Time
+              </span>
+              <div style="display: flex; justify-content: center; align-items: center; height: 210px; background-color: #050a14; border-radius: 6px; overflow: hidden;">
+                <svg viewBox="0 0 400 230" style="width: 100%; height: 100%;" aria-label="Digital Twin Inkubator">
+                  <!-- Casing Luar Kayu / Box Hitam -->
+                  <rect x="15" y="10" width="370" height="210" rx="6" fill="#1c1917" stroke="#44403c" stroke-width="3"/>
+                  
+                  <!-- Panel Atas Hitam (Header Display & Switch) -->
+                  <rect x="20" y="15" width="360" height="42" fill="#0c0a09"/>
+                  
+                  <!-- Display Timer Kiri -->
+                  <rect x="40" y="21" width="45" height="28" rx="2" fill="#1c1917" stroke="#292524"/>
+                  <text x="62" y="40" fill="#ef4444" font-size="14" font-family="monospace" font-weight="800" text-anchor="middle">05:00</text>
+                  
+                  <!-- Display Suhu Merah 7-Segment Tengah (Persis Foto 29.2°C) -->
+                  <rect x="150" y="19" width="65" height="32" rx="3" fill="#000000" stroke="#7f1d1d" stroke-width="1.5"/>
+                  <text id="svgDigitalTemp" x="182" y="42" fill="#ff2222" font-size="19" font-family="monospace" font-weight="900" text-anchor="middle">29.2</text>
+                  <circle cx="204" cy="26" r="2.5" fill="#ef4444"/> <!-- Dot status -->
+
+                  <!-- Saklar Rocker Merah Kanan -->
+                  <rect x="295" y="24" width="14" height="22" rx="3" fill="#dc2626"/>
+                  <rect x="325" y="24" width="14" height="22" rx="3" fill="#dc2626"/>
+
+                  <!-- Ruang Bagian Dalam (Dinding Kayu Coklat Muda) -->
+                  <rect x="25" y="62" width="350" height="150" fill="#292524"/>
+                  <rect x="30" y="66" width="340" height="142" fill="#44403c" opacity="0.6"/>
+
+                  <!-- Lampu Pijar Pemanas di Sisi Kanan Atas (Persis Foto) -->
+                  <g id="svgLamp1">
+                    <circle cx="315" cy="85" r="16" fill="#f59e0b" opacity="0.95" class="heater-bulb-glow"/>
+                    <rect x="295" y="68" width="40" height="10" rx="2" fill="#78716c"/>
+                    <text x="315" y="112" fill="#fde68a" font-size="8" text-anchor="middle">Lampu Pijar</text>
+                  </g>
+
+                  <!-- Kabel Kuning & Probe Sensor DS18B20 Gantung Tengah -->
+                  <path d="M182,57 Q185,85 180,115" stroke="#facc15" stroke-width="2.5" fill="none"/>
+                  <!-- Probe Silinder Logam Hitam Tahan Air -->
+                  <rect x="177" y="115" width="6" height="22" rx="2" fill="#09090b" stroke="#71717a"/>
+                  <text x="180" y="148" fill="#cbd5e1" font-size="8" text-anchor="middle">DS18B20</text>
+
+                  <!-- Rak Telur Berbingkai Kayu dengan Ram Kawat Hijau -->
+                  <g id="svgEggRack" transform="translate(180, 165) rotate(5)">
+                    <!-- Bingkai Kayu Rak -->
+                    <rect x="-135" y="-14" width="270" height="28" rx="2" fill="#78716c" stroke="#a8a29e" stroke-width="1.5"/>
+                    <!-- Ram Kawat Hijau (Mesh) -->
+                    <rect x="-130" y="-8" width="260" height="16" fill="#065f46" opacity="0.8"/>
+                    <!-- 5 Butir Telur Entok di Atas Ram Kawat -->
+                    <ellipse cx="-100" cy="-6" rx="9" ry="12" fill="#fed7aa"/>
+                    <ellipse cx="-50" cy="-6" rx="9" ry="12" fill="#fed7aa"/>
+                    <ellipse cx="0" cy="-6" rx="9" ry="12" fill="#fed7aa"/>
+                    <ellipse cx="50" cy="-6" rx="9" ry="12" fill="#fed7aa"/>
+                    <ellipse cx="100" cy="-6" rx="9" ry="12" fill="#fed7aa"/>
+                  </g>
+
+                  <!-- Poros & Bracket Tuas Servo di Kanan Atas -->
+                  <rect x="330" y="90" width="18" height="30" rx="3" fill="#a8a29e"/>
+                  <line x1="339" y1="120" x2="315" y2="155" stroke="#d6d3d1" stroke-width="3"/>
+                </svg>
+              </div>
+              <p style="font-size: 0.72rem; color: #38bdf8; margin-top: 0.45rem;">
+                Visualizer Digital Twin bereaksi secara langsung terhadap sudut putaran servo dan perubahan suhu real-time.
+              </p>
+            </div>
+          </div>
+
+          <!-- Tabel Ringkas Pinout ESP32 DevKit V1 -->
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Komponen</th>
+                  <th>Pin ESP32</th>
+                  <th>Sinyal / Peran</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>DS18B20 Waterproof</td>
+                  <td><strong>GPIO 4</strong></td>
+                  <td>Input Digital OneWire (Suhu Inti)</td>
+                </tr>
+                <tr>
+                  <td>DHT22 / AM2302</td>
+                  <td><strong>GPIO 5</strong></td>
+                  <td>Input Digital (Suhu & Kelembapan)</td>
+                </tr>
+                <tr>
+                  <td>Servo SG90 1 Poros</td>
+                  <td><strong>GPIO 18</strong></td>
+                  <td>Output PWM (Pembalik Telur)</td>
+                </tr>
+                <tr>
+                  <td>Relay Lampu Pijar (2x5W)</td>
+                  <td><strong>GPIO 26</strong></td>
+                  <td>Output Digital (Kontrol Pemanas)</td>
+                </tr>
+                <tr>
+                  <td>Fan DC 6010 (12V)</td>
+                  <td><strong>GPIO 27</strong></td>
+                  <td>Output Driver (Sirkulasi Udara)</td>
+                </tr>
+                <tr>
+                  <td>Humidifier Ultrasonic 5V</td>
+                  <td><strong>GPIO 25</strong></td>
+                  <td>Output MOSFET (Pengkabutan)</td>
+                </tr>
+                <tr>
+                  <td>Buzzer Alarm</td>
+                  <td><strong>GPIO 14</strong></td>
+                  <td>Output Sinyal Audio Alarm</td>
+                </tr>
+                <tr>
+                  <td>OLED 0.96" I2C</td>
+                  <td><strong>GPIO 21 / 22</strong></td>
+                  <td>SDA / SCL Display Lokal</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIMULATOR FAULT INJECTION LAB (UJI COBA SKENARIO SIDANG) -->
+      <div class="dashboard-card" style="margin-bottom: 1.25rem;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🧪 Laboratorium Uji Anomali & Simulasi Skenario</h3>
+            <span class="card-subtitle">Uji respons sistem dan algoritma AI saat terjadi kegagalan fisik (Live Demo Sidang)</span>
+          </div>
+        </div>
+
+        <div class="btn-group" style="flex-wrap: wrap;">
+          <button id="faultHeaterBroken" class="btn-secondary" style="font-size: 0.8rem;">
+            ⚠️ Simulasikan Lampu Pijar Putus
+          </button>
+          <button id="faultLidOpen" class="btn-secondary" style="font-size: 0.8rem;">
+            🚪 Simulasikan Pintu Terbuka (Suhu Drop)
+          </button>
+          <button id="faultHumidifierEmpty" class="btn-secondary" style="font-size: 0.8rem;">
+            💧 Simulasikan Air Humidifier Habis
+          </button>
+          <button id="faultOverheat" class="btn-secondary" style="font-size: 0.8rem;">
+            🔥 Simulasikan Overheating (>39.2°C)
+          </button>
+          <button id="faultReset" class="btn-primary" style="font-size: 0.8rem;">
+            ✅ Reset Kondisi Normal
+          </button>
+        </div>
+      </div>
+
+      <!-- KODE ARDUINO C++ ESP32 LENGKAP -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">💻 Kode Sumber Firmware ESP32 DevKit V1 (InkubatorEntok_ESP32.ino)</h3>
+            <span class="card-subtitle">Kode siap flash melalui Arduino IDE / VS Code PlatformIO yang terhubung ke server ini</span>
+          </div>
+          <div class="btn-group">
+            <button id="btnCopyFirmware" class="btn-secondary" style="font-size: 0.8rem;">📋 Salin Kode</button>
+            <a href="/api/firmware?download=true" class="btn-primary" style="font-size: 0.8rem; text-decoration: none;" download>💾 Unduh File .INO</a>
+          </div>
+        </div>
+        <div class="code-block-wrap">
+          <pre><code id="firmwareCodeDisplay">// Memuat kode sumber ESP32...</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- TAB 3: MODUL 2 - KECERDASAN BUATAN (AI)                                -->
+    <!-- ====================================================================== -->
+    <section id="tab-ai" class="tab-content" style="display: none;" role="tabpanel">
+      <!-- PENJELASAN INTEGRASI MATKUL AI -->
+      <div class="dashboard-card" style="margin-bottom: 1.25rem; border-left: 4px solid var(--emerald-primary);">
+        <h2 class="card-title">🧠 Capaian Mata Kuliah: Kecerdasan Buatan (Artificial Intelligence)</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem;">
+          Implementasi algoritma AI meliputi: <strong>(1) Prediksi Hatching Success Index (HSI)</strong> berbasis evaluasi kestabilan termal dan variansi,
+          <strong>(2) Stage-Aware Adaptive Microclimate Controller</strong> menggunakan logika aturan fuzzy sesuai biologi telur entok 35 hari,
+          <strong>(3) Real-time Anomaly Detection Engine</strong> untuk predictive maintenance perangkat, 
+          <strong>(4) Computer Vision Candling Simulator</strong> untuk klasifikasi fertilitas embrio, serta 
+          <strong>(5) Asisten Cerdas Konsultasi Penetasan</strong>.
+        </p>
+      </div>
+
+      <!-- ROW 1: PREDIKSI DAYA TETAS & PENGATUR ADAPTIF MIKROKLIMAT -->
+      <div class="grid-2" style="margin-bottom: 1.25rem;">
+        <!-- Card 1: AI Hatching Health Scoring -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">🎯 Evaluasi Kesehatan & Probabilitas Penetasan (HSI)</h3>
+              <span class="card-subtitle">Analisis multivariat kestabilan lingkungan inkubasi</span>
+            </div>
+            <span id="aiHealthGrade" class="badge-tag" style="background-color: var(--emerald-subtle); color: var(--emerald-primary);">Optimal</span>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-around; margin: 1rem 0;">
+            <div style="text-align: center;">
+              <span id="aiHsiBig" style="font-size: 3rem; font-weight: 800; font-family: monospace; color: var(--emerald-primary);">94.5%</span>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">Indeks Keberhasilan Tetas</p>
+            </div>
+            <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.35rem;">
+              <div>Kestabilan Suhu: <strong id="valFactorThermal">92%</strong></div>
+              <div>Kepatuhan Kelembapan: <strong id="valFactorHumidity">88%</strong></div>
+              <div>Rasio Pembalikan Telur: <strong id="valFactorTurning">95%</strong></div>
+              <div>Indeks Stres Lingkungan: <strong id="valFactorStress" style="color: var(--emerald-primary);">5% (Rendah)</strong></div>
+            </div>
+          </div>
+
+          <div style="background-color: var(--bg-elevated); padding: 0.85rem; border-radius: 8px; font-size: 0.85rem;">
+            <strong>Rekomendasi AI:</strong>
+            <p id="aiRecommendationText" style="color: var(--text-muted); margin-top: 0.25rem;">
+              Kondisi mikroklimat ruang inkubator sangat ideal untuk perkembangan embrio telur entok.
+            </p>
+          </div>
+        </div>
+
+        <!-- Card 2: Pengatur Adaptif Berbasis Siklus 35 Hari Entok -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">🌱 Mikroklimat Adaptif Siklus Telur Entok (Fuzzy Logic)</h3>
+              <span class="card-subtitle">Penyesuaian target otomatis sesuai tahapan embriogenesis</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 1rem;">
+            <label for="sliderIncubationDay" class="form-label" style="display: flex; justify-content: space-between;">
+              <span>Simulasi Hari Inkubasi:</span>
+              <strong id="sliderDayLabel">Hari ke-8 (Fase Awal)</strong>
+            </label>
+            <input type="range" id="sliderIncubationDay" min="1" max="35" value="8" style="width: 100%; cursor: pointer;">
+          </div>
+
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fase Biologis</th>
+                  <th>Hari</th>
+                  <th>Target Suhu</th>
+                  <th>Target RH</th>
+                  <th>Pembalikan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="rowStageEarly">
+                  <td><strong>Fase Awal (Vaskular)</strong></td>
+                  <td>1 - 14</td>
+                  <td>37.8°C</td>
+                  <td>58 - 62%</td>
+                  <td>Aktif (4 Jam)</td>
+                </tr>
+                <tr id="rowStageMid">
+                  <td><strong>Fase Pertumbuhan & Cooling</strong></td>
+                  <td>15 - 29</td>
+                  <td>37.5°C</td>
+                  <td>62 - 68%</td>
+                  <td>Aktif + Cooling</td>
+                </tr>
+                <tr id="rowStageLockdown">
+                  <td><strong>Fase Kritis (Lockdown)</strong></td>
+                  <td>30 - 35</td>
+                  <td>37.2°C</td>
+                  <td>75 - 80%</td>
+                  <td><span style="color: var(--rose-danger); font-weight: 700;">MATI (0°)</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top: 0.85rem; font-size: 0.8rem; color: var(--text-muted);">
+            💡 <em>Penjelasan Biologis: Telur entok memiliki membran tebal. Pada hari 30-35 pemutaran dimatikan dan kelembapan ditingkatkan ke 75-80% agar selaput lunak sehingga paruh anak entok dapat memecah kerabang tanpa kelelahan.</em>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROW 2: COMPUTER VISION CANDLING TELUR & AI ASISTEN DIAGNOSIS -->
+      <div class="grid-2">
+        <!-- Card 3: Computer Vision Candling Simulator -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">🔍 Computer Vision: Analisis Teropong Telur (Candling)</h3>
+              <span class="card-subtitle">Deteksi fertilitas, percabangan vaskular, dan embrio mati</span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+            <button class="btn-secondary btn-candling-sample active" data-sample="fertile_day7" style="font-size: 0.75rem;">Fertil Hari ke-7</button>
+            <button class="btn-secondary btn-candling-sample" data-sample="fertile_day14" style="font-size: 0.75rem;">Fertil Hari ke-14</button>
+            <button class="btn-secondary btn-candling-sample" data-sample="infertile" style="font-size: 0.75rem;">Infertil (Bening)</button>
+            <button class="btn-secondary btn-candling-sample" data-sample="blood_ring" style="font-size: 0.75rem;">Cincin Darah (Mati)</button>
+            <button class="btn-secondary btn-candling-sample" data-sample="lockdown_ready" style="font-size: 0.75rem;">Siap Menetas (H-30)</button>
+          </div>
+
+          <!-- Candling Visual Box -->
+          <div class="candling-display">
+            <div id="candlingVisualEgg" class="candling-egg-visual" style="background: radial-gradient(circle at 45% 45%, #fed7aa 0%, #ea580c 50%, #7c2d12 100%);">
+              <!-- Canvas or SVG overlay representing internal veins -->
+              <svg viewBox="0 0 160 220" style="width: 100%; height: 100%;">
+                <g id="candlingVeinsG">
+                  <!-- Simulated vascular spiderweb veins -->
+                  <circle cx="75" cy="95" r="7" fill="#7f1d1d"/>
+                  <path d="M75,95 Q50,75 30,85 M75,95 Q90,70 120,75 M75,95 Q60,130 45,150 M75,95 Q105,125 130,140 M75,95 Q115,100 145,105" stroke="#991b1b" stroke-width="2.5" fill="none"/>
+                  <path d="M30,85 Q20,95 15,115 M120,75 Q135,65 145,55 M45,150 Q40,170 35,185" stroke="#b91c1c" stroke-width="1.5" fill="none"/>
+                </g>
+                <!-- Air Cell at bottom/top -->
+                <ellipse cx="80" cy="205" rx="45" ry="15" fill="#fef08a" opacity="0.6"/>
+              </svg>
+            </div>
+
+            <div style="width: 100%; text-align: center;">
+              <h4 id="candlingResultTitle" style="font-size: 1rem; color: #fde047; margin-bottom: 0.25rem;">Embrio Fertil & Berkembang Normal (Hari ke-7)</h4>
+              <p style="font-size: 0.8rem; color: #94a3b8;">Keyakinan Model AI: <strong id="candlingConfidence" style="color: #4ade80;">96.4%</strong></p>
+            </div>
+
+            <div style="width: 100%; font-size: 0.8rem; background-color: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px;">
+              <strong style="color: #e2e8f0; display: block; margin-bottom: 0.25rem;">Ciri Vaskular Terdeteksi:</strong>
+              <ul id="candlingFeaturesList" style="list-style-type: disc; margin-left: 1.25rem; color: #cbd5e1;">
+                <li>Jaringan pembuluh darah laba-laba (spiderweb capillary pattern)</li>
+                <li>Bintik gelap mata embrio aktif di pusat vaskularisasi</li>
+                <li>Kantung udara (air cell) mulai terbentuk di ujung tumpul</li>
+              </ul>
+              <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <strong style="color: #4ade80;">Tindakan Dianjurkan:</strong>
+                <span id="candlingRecommendation" style="color: #f1f5f9;"> Lanjutkan inkubasi dan pembalikan telur teratur.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 4: AI Poultry Consultant / Diagnostic Chatbot -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">💬 Asisten Cerdas Konsultasi & Diagnosis Inkubasi</h3>
+              <span class="card-subtitle">Konsultasi biologis telur entok dan penanganan kendala IoT</span>
+            </div>
+            <span class="badge-tag">AI Consultant</span>
+          </div>
+
+          <div class="chip-group">
+            <button class="prompt-chip" data-query="Kenapa suhu inkubator turun tiba-tiba?">🌡️ Suhu tiba-tiba turun?</button>
+            <button class="prompt-chip" data-query="Berapa kelembapan ideal fase lockdown telur entok?">💧 Kelembapan saat lockdown?</button>
+            <button class="prompt-chip" data-query="Kapan pembalikan telur servo harus dihentikan?">🔄 Kapan servo stop putar?</button>
+            <button class="prompt-chip" data-query="Bagaimana cara pendinginan cooling telur entok?">❄️ Prosedur pendinginan telur?</button>
+          </div>
+
+          <div class="chat-window">
+            <div id="chatMessagesContainer" class="chat-messages" role="log" aria-live="polite">
+              <div class="chat-bubble ai-msg">
+                <strong>Halo peternak! 👋</strong><br>
+                Saya asisten cerdas sistem inkubator NETESIN. Tanyakan apa pun seputar parameter suhu, kelembapan, siklus biologis telur entok 35 hari, atau penanganan anomali perangkat keras.
+              </div>
+            </div>
+
+            <form id="chatForm" class="chat-input-bar">
+              <input type="text" id="chatInputText" class="form-input" placeholder="Ketik pertanyaan atau kendala inkubator di sini..." aria-label="Input pesan konsultasi">
+              <button type="submit" class="btn-primary" style="padding: 0.5rem 1rem;">Kirim</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- TAB 4: MODUL 3 - TEKNOLOGI SISTEM TERINTEGRASI                         -->
+    <!-- ====================================================================== -->
+    <section id="tab-integration" class="tab-content" style="display: none;" role="tabpanel">
+      <!-- PENJELASAN INTEGRASI MATKUL SISTEM TERINTEGRASI -->
+      <div class="dashboard-card" style="margin-bottom: 1.25rem; border-left: 4px solid #9333ea;">
+        <h2 class="card-title">🌐 Capaian Mata Kuliah: Teknologi Sistem Terintegrasi</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem;">
+          Mengintegrasikan seluruh subsistem ke dalam arsitektur berlapis yang kohesif: 
+          <strong>Physical Edge IoT (ESP32)</strong> terhubung melalui <strong>Jaringan Protokol Nirkabel (HTTP/REST & WebSocket)</strong> 
+          ke <strong>Server Gateway Terpusat (Node.js & Express)</strong>, berinteraksi dengan <strong>AI Intelligence Layer</strong>, 
+          <strong>Database Persistence</strong>, antarmuka <strong>Web Presentation</strong> interaktif, dan 
+          <strong>Layanan Notifikasi Eksternal (Webhook Bot Telegram)</strong>.
+        </p>
+      </div>
+
+      <!-- TOPOLOGI ARSITEKTUR MULTI-TIER LENGKAP -->
+      <div class="dashboard-card" style="margin-bottom: 1.25rem;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🗺️ Diagram Topologi Arsitektur Sistem Terintegrasi</h3>
+            <span class="card-subtitle">Aliran data end-to-end dari probe fisik hingga platform cloud dan notifikasi</span>
+          </div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">
+            Status Gateway: <strong style="color: var(--emerald-primary);">ONLINE (Port 3100)</strong>
+          </div>
+        </div>
+
+        <div class="topology-flow">
+          <!-- Layer 1: Edge Hardware -->
+          <div class="topology-node">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="node-icon-box node-icon-hardware" aria-hidden="true">📡</div>
+              <div>
+                <strong>1. Layer Edge IoT (ESP32 DevKit V1)</strong>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">
+                  Sensor: DS18B20 (GPIO 4), DHT22 (GPIO 5) | Aktuator: Relay Lampu (GPIO 26), Fan DC (GPIO 27), Servo (GPIO 18), Humidifier (GPIO 25), Buzzer (GPIO 14), OLED (GPIO 21/22)
+                </p>
+              </div>
+            </div>
+            <span class="badge-tag" style="background-color: var(--amber-subtle); color: var(--amber-heat);">Edge Physical</span>
+          </div>
+
+          <!-- Layer 2: Transport Protocol -->
+          <div class="topology-node">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="node-icon-box node-icon-network" aria-hidden="true">🔄</div>
+              <div>
+                <strong>2. Layer Jaringan & Protokol Transport</strong>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">
+                  Protokol Wi-Fi 802.11 b/g/n, HTTP REST API (POST /api/telemetry), dan WebSocket Server dua arah latensi rendah (&lt;50ms)
+                </p>
+              </div>
+            </div>
+            <span class="badge-tag" style="background-color: var(--sky-subtle); color: var(--sky-moisture);">HTTP / WebSocket</span>
+          </div>
+
+          <!-- Layer 3: Server Middleware & AI Core -->
+          <div class="topology-node">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="node-icon-box node-icon-ai" aria-hidden="true">⚙️</div>
+              <div>
+                <strong>3. Layer Middleware Gateway & AI Inference Core (Node.js & Express)</strong>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">
+                  Validasi payload, kalkulasi HSI, engine deteksi anomali, kontrol adaptif mikroklimat fuzzy, dan broadcast stream
+                </p>
+              </div>
+            </div>
+            <span class="badge-tag" style="background-color: var(--emerald-subtle); color: var(--emerald-primary);">Node.js Server</span>
+          </div>
+
+          <!-- Layer 4: Persistence Storage -->
+          <div class="topology-node">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="node-icon-box node-icon-db" aria-hidden="true">💾</div>
+              <div>
+                <strong>4. Layer Penyimpanan Data & Audit Histori</strong>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">
+                  Penyimpanan JSON / File Store, batching lifecycle, rekam jejak suhu/kelembapan, audit log kendali, dan generator CSV
+                </p>
+              </div>
+            </div>
+            <span class="badge-tag" style="background-color: rgba(147, 51, 234, 0.12); color: #9333ea;">Data Store</span>
+          </div>
+
+          <!-- Layer 5: External Telegram Webhook -->
+          <div class="topology-node">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="node-icon-box node-icon-alert" aria-hidden="true">📲</div>
+              <div>
+                <strong>5. Layer Layanan Eksternal (Telegram Bot Webhook)</strong>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">
+                  Pengiriman peringatan otomatis jika terjadi overheat, suhu drop, atau kegagalan pemanas langsung ke smartphone peternak
+                </p>
+              </div>
+            </div>
+            <span class="badge-tag" style="background-color: var(--rose-subtle); color: var(--rose-danger);">Telegram API</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROW 2: MANAJEMEN BATCH & INTEGRASI BOT TELEGRAM -->
+      <div class="grid-2" style="margin-bottom: 1.25rem;">
+        <!-- Card 1: Batch Lifecycle Manager -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">📦 Manajemen Batch Telur Aktif</h3>
+              <span class="card-subtitle">Pengaturan siklus tanggal mulai dan kapasitas rak</span>
+            </div>
+          </div>
+
+          <form id="batchSettingsForm" style="display: flex; flex-direction: column; gap: 0.85rem;">
+            <div>
+              <label for="inputBatchTitle" class="form-label">Nama / Judul Batch</label>
+              <input type="text" id="inputBatchTitle" class="form-input" value="Inkubasi Telur Entok Manila Super (Grade A)">
+            </div>
+
+            <div class="grid-2" style="gap: 0.85rem;">
+              <div>
+                <label for="inputBatchBreed" class="form-label">Ras Unggas</label>
+                <select id="inputBatchBreed" class="form-input">
+                  <option value="Entok Manila (Cairina moschata)">Entok Manila (35 Hari)</option>
+                  <option value="Bebek Alabio / Mojosari">Bebek Alabio (28 Hari)</option>
+                  <option value="Ayam Kampung Super">Ayam Kampung (21 Hari)</option>
+                </select>
+              </div>
+              <div>
+                <label for="inputTotalEggs" class="form-label">Jumlah Butir Telur</label>
+                <input type="number" id="inputTotalEggs" class="form-input" min="1" max="100" value="30">
+              </div>
+            </div>
+
+            <div class="grid-2" style="gap: 0.85rem;">
+              <div>
+                <label for="inputStartDate" class="form-label">Tanggal Mulai Pengeraman</label>
+                <input type="date" id="inputStartDate" class="form-input">
+              </div>
+              <div>
+                <label for="inputCurrentDay" class="form-label">Hari Berjalan (Hari ke-)</label>
+                <input type="number" id="inputCurrentDay" class="form-input" min="1" max="35" value="8">
+              </div>
+            </div>
+
+            <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">💾 Simpan Pengaturan Batch</button>
+          </form>
+        </div>
+
+        <!-- Card 2: Konfigurasi Webhook Telegram Bot -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">📱 Konfigurasi Webhook Alert Telegram</h3>
+              <span class="card-subtitle">Pengiriman notifikasi otomatis saat ambang batas terlampaui</span>
+            </div>
+            <span class="badge-tag" style="background-color: var(--sky-subtle); color: var(--sky-moisture);">Webhook Aktif</span>
+          </div>
+
+          <form id="telegramConfigForm" style="display: flex; flex-direction: column; gap: 0.85rem;">
+            <div>
+              <label for="inputTgToken" class="form-label">Telegram Bot Token</label>
+              <input type="text" id="inputTgToken" class="form-input" value="7812938491:AAH8zP9xK_test_mock_token">
+            </div>
+
+            <div>
+              <label for="inputTgChatId" class="form-label">Target Chat ID / Grup ID</label>
+              <input type="text" id="inputTgChatId" class="form-input" value="-100234918234">
+            </div>
+
+            <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.4rem;">
+              <label class="switch-label">
+                <input type="checkbox" id="chkAlertOverheat" class="switch-input" checked>
+                <span class="switch-slider"></span>
+                <span>Peringatan jika Suhu Overheat (>39.0°C)</span>
+              </label>
+              <label class="switch-label">
+                <input type="checkbox" id="chkAlertUnderheat" class="switch-input" checked>
+                <span class="switch-slider"></span>
+                <span>Peringatan jika Suhu Turun Drastis (&lt;36.5°C)</span>
+              </label>
+              <label class="switch-label">
+                <input type="checkbox" id="chkAlertHumidifier" class="switch-input" checked>
+                <span class="switch-slider"></span>
+                <span>Peringatan jika Pasokan Air Humidifier Habis</span>
+              </label>
+            </div>
+
+            <div class="btn-group" style="margin-top: 0.5rem;">
+              <button type="button" id="btnTestTelegramAlert" class="btn-secondary" style="flex: 1;">📲 Uji Kirim Webhook</button>
+              <button type="submit" class="btn-primary" style="flex: 1;">Simpan Konfigurasi</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ROW 3: KONEKSI DATABASE EKSTERNAL CLOUD (FIREBASE / SUPABASE / MONGODB) -->
+      <div class="dashboard-card" style="margin-bottom: 1.25rem;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">☁️ Integrasi Database Eksternal Cloud (Cloud Database Sync)</h3>
+            <span class="card-subtitle">Sinkronisasi data telemetri historis ke cloud (Firebase, Supabase PostgreSQL, atau ThingSpeak)</span>
+          </div>
+          <span id="externalDbStatusBadge" class="badge-tag" style="background-color: var(--amber-subtle); color: var(--amber-heat);">Lokal (Tersedia Cloud Sync)</span>
+        </div>
+
+        <form id="externalDbForm" style="display: flex; flex-direction: column; gap: 0.85rem;">
+          <div class="grid-3" style="gap: 0.85rem;">
+            <div>
+              <label for="selectDbProvider" class="form-label">Provider Database Eksternal</label>
+              <select id="selectDbProvider" class="form-input">
+                <option value="FIREBASE">Firebase Realtime Database (Google Cloud)</option>
+                <option value="SUPABASE">Supabase (PostgreSQL Cloud REST)</option>
+                <option value="THINGSPEAK">ThingSpeak IoT Cloud (MathWorks)</option>
+                <option value="CUSTOM_REST">Custom Cloud REST API / Webhook</option>
+              </select>
+            </div>
+            <div style="grid-column: span 2;">
+              <label for="inputDbUrl" class="form-label">Cloud Database URL / Endpoint REST</label>
+              <input type="text" id="inputDbUrl" class="form-input" placeholder="https://proyek-anda.firebasedatabase.app" value="https://netesin-untidar-default-rtdb.asia-southeast1.firebasedatabase.app">
+            </div>
+          </div>
+
+          <div class="grid-2" style="gap: 0.85rem;">
+            <div>
+              <label for="inputDbApiKey" class="form-label">API Key / Auth Secret (Opsional untuk Public DB)</label>
+              <input type="password" id="inputDbApiKey" class="form-input" placeholder="Masukkan API Key cloud database Anda...">
+            </div>
+            <div>
+              <label for="inputDbTable" class="form-label">Nama Koleksi / Table / Path</label>
+              <input type="text" id="inputDbTable" class="form-input" value="telemetry_logs">
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; background-color: var(--bg-elevated); border-radius: 8px;">
+            <label class="switch-label">
+              <input type="checkbox" id="chkEnableExternalDb" class="switch-input">
+              <span class="switch-slider"></span>
+              <strong>Aktifkan Sinkronisasi Otomatis Setiap 10 Detik</strong>
+            </label>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">
+              Data tersinkron: <strong id="valTotalSyncedDb">0</strong> paket data
+            </span>
+          </div>
+
+          <div class="btn-group">
+            <button type="button" id="btnTestExternalDb" class="btn-secondary" style="flex: 1;">🧪 Uji Sambungan Cloud Database</button>
+            <button type="submit" class="btn-primary" style="flex: 1;">💾 Simpan Pengaturan Cloud</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- AUDIT LOG & CETAK LAPORAN RESMI PROYEK AKHIR -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">📜 Log Audit Sistem Terintegrasi & Laporan Pengujian</h3>
+            <span class="card-subtitle">Riwayat anomali, tindakan kontrol aktuator, dan rekaman pengujian</span>
+          </div>
+          <div class="btn-group">
+            <button id="btnPrintReportBtn" class="btn-primary" style="font-size: 0.8rem;">🖨️ Cetak Dokumen Laporan Pengujian</button>
+          </div>
+        </div>
+
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Waktu (WIB)</th>
+                <th>Tingkat Keparahan</th>
+                <th>Judul Peristiwa</th>
+                <th>Detail Informasi Sistem</th>
+              </tr>
+            </thead>
+            <tbody id="auditLogsTableBody">
+              <tr>
+                <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">
+                  Memuat data log sistem...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER RESMI AKADEMIK -->
+    <footer style="margin-top: 2rem; padding: 1.5rem 0; text-align: center; border-top: 1px solid var(--border-color); font-size: 0.8rem; color: var(--text-muted);">
+      <p><strong>NETESIN - Sistem Inkubator Telur Entok Pintar Berbasis ESP32, Kecerdasan Buatan, & Sistem Terintegrasi</strong></p>
+      <p style="margin-top: 0.25rem;">
+        Penyusun: <strong>Muhammad Ramdhan (2420506027)</strong> & <strong>Hakkan Azrul Suseno (2420506029)</strong><br>
+        Dosen Pengampu: <strong>Muhamad Maksum Hidayat, S.Kom., M.Kom.</strong> | Program Studi Teknologi Informasi, Universitas Tidar 2026
+      </p>
+    </footer>
+
+  </div>
+
+  <!-- Script Aplikasi Frontend -->
+  <script src="js/app.js"></script>
+</body>
+</html>
