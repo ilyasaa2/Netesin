@@ -1,116 +1,114 @@
 /* =========================================================================
- * FIRMWARE LENGKAP: SISTEM INKUBATOR TELUR ENTOK BERBASIS ESP32 & MQTT
- * Kolaborasi: T. Sistem Terintegrasi, Kecerdasan Buatan, dan IoT (UNTIDAR 2026)
- * Protokol: MQTT ke Broker HiveMQ (broker.hivemq.com) & Web Dashboard
+ * FIRMWARE RESMI: SISTEM INKUBATOR TELUR ENTOK (NETESIN)
+ * Konfigurasi Hardware: ESP32 + Sensor DHT22 + Modul Relay Humidifier
+ * Kolaborasi: Internet of Things, Kecerdasan Buatan & Sistem Terintegrasi
+ * Protokol: MQTT ke Broker HiveMQ (broker.hivemq.com) & Web Gateway
  * =========================================================================
  */
 
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <HTTPClient.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
-#include <ESP32Servo.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 
 // -------------------------------------------------------------------------
-// 1. Konfigurasi Jaringan Wi-Fi & Broker MQTT HiveMQ
+// 1. Konfigurasi Jaringan Wi-Fi, Broker MQTT HiveMQ & Server HTTP
 // -------------------------------------------------------------------------
-const char* ssid        = "POLDA MAGELANG";    // Ganti sesuai Wi-Fi Anda
-const char* password    = "12345678";          // Ganti sesuai password Wi-Fi Anda
+const char* ssid        = "POLDA MAGELANG";    // Ganti dengan SSID Wi-Fi Anda
+const char* password    = "12345678";          // Ganti dengan Password Wi-Fi Anda
 
-const char* mqtt_server = "broker.hivemq.com"; // Broker Publik HiveMQ
+// Opsi 1: Broker Publik MQTT HiveMQ
+const char* mqtt_server = "broker.hivemq.com";
 const int   mqtt_port   = 1883;
 
-// Topik MQTT (Sesuai kode awal Anda)
+// Opsi 2: Backup HTTP REST Langsung ke Laptop/Server (Ganti IP dengan IP Laptop Anda)
+const char* server_url   = "http://192.168.1.108:3100/api/telemetry";
+const bool  enable_http_backup = true; // Aktifkan HTTP jika MQTT tidak terjangkau
+
+// Topik MQTT
 const char* topic_telemetry = "inkubator/mentok/telemetry";
 const char* topic_status    = "inkubator/mentok/status";
 const char* topic_control   = "inkubator/mentok/control";
 
 // -------------------------------------------------------------------------
-// 2. Konfigurasi Pin GPIO (Sesuai Rangkaian Miniatur Fisik Anda)
+// 2. Konfigurasi Pin GPIO (Hanya DHT22 & Humidifier)
 // -------------------------------------------------------------------------
-#define PIN_DHT22         4   // Sensor DHT22 Suhu & Kelembapan (GPIO 4 - Sesuai kode lama Anda)
-#define PIN_DS18B20       5   // Sensor Suhu Waterproof Probe Gantung (GPIO 5)
+#define PIN_DHT22         4   // Pin Data Sensor DHT22 (GPIO 4)
+#define RELAY_HUMIDIFIER  27  // Pin Modul Relay Humidifier Ultrasonic (GPIO 27)
 
-#define RELAY_HEATER      26  // Relay 1: Lampu Pijar Pemanas (GPIO 26)
-#define RELAY_HUMIDIFIER  27  // Relay 2: Modul Humidifier Ultrasonic (GPIO 27)
-#define RELAY_FAN         25  // Relay 3: Kipas Sirkulasi Fan DC (GPIO 25)
-#define PIN_SERVO         18  // Motor Servo SG90 Pembalik Telur (GPIO 18)
-#define PIN_BUZZER        14  // Buzzer Alarm (GPIO 14)
+#define DHTTYPE DHT22
 
-// Modul relay fisik menggunakan logika Active LOW
+// Modul relay umumnya Active LOW (nyala saat LOW).
+// Jika relay Anda Active HIGH, cukup tukar LOW dan HIGH di bawah ini.
 #define RELAY_ON   LOW
 #define RELAY_OFF  HIGH
 
-#define DHTTYPE DHT22
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-
 // -------------------------------------------------------------------------
-// 3. Batas Target Mikroklimat Telur Entok
+// 3. Batas Ambang Kelembapan Default (Mikroklimat Telur Entok)
 // -------------------------------------------------------------------------
-float temp_target_min = 37.5;
-float temp_target_max = 38.5;
-float hum_target_min  = 60.0;
-float hum_target_max  = 68.0;
+float hum_target_min = 60.0; // Humidifier ON jika RH < 60%
+float hum_target_max = 66.0; // Humidifier OFF jika RH >= 66%
 
-// Objek Sensor & Komunikasi
+// Objek Jaringan & Sensor
 WiFiClient espClient;
 PubSubClient client(espClient);
 DHT dht(PIN_DHT22, DHTTYPE);
-OneWire oneWire(PIN_DS18B20);
-DallasTemperature dsSensor(&oneWire);
-Servo eggServo;
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // Variabel Telemetri
-float tempCoreDS = 0.0;
-float tempAmbientDHT = 0.0;
-float humidityDHT = 0.0;
-bool heaterState = false;
-bool fanState = true;
+float currentTemp = 0.0;
+float currentHumidity = 0.0;
 bool humidifierState = false;
-int currentServoAngle = 45;
+bool manualOverride = false; // Mode kontrol manual dari web dashboard
 
 unsigned long lastPublishTime = 0;
-const unsigned long publishInterval = 2500; // Kirim tiap 2.5 detik
+const unsigned long publishInterval = 2500; // Kirim telemetri setiap 2.5 detik
 
+// -------------------------------------------------------------------------
+// 4. Callback MQTT: Menerima Perintah dari Dashboard / AI Server
+// -------------------------------------------------------------------------
 void callback(char* topic, byte* payload, unsigned int length) {
   String message = "";
   for (unsigned int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
-  Serial.print("Pesan MQTT diterima [");
+  Serial.print("[MQTT Masuk] Topik: ");
   Serial.print(topic);
-  Serial.print("]: ");
+  Serial.print(" | Pesan: ");
   Serial.println(message);
 
   StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, message);
   if (!error) {
-    if (doc.containsKey("heater")) {
-      heaterState = doc["heater"];
-      digitalWrite(RELAY_HEATER, heaterState ? RELAY_ON : RELAY_OFF);
-    }
-    if (doc.containsKey("fan")) {
-      fanState = doc["fan"];
-      digitalWrite(RELAY_FAN, fanState ? RELAY_ON : RELAY_OFF);
-    }
+    // 1. Kontrol Sakelar Manual Humidifier dari Web Dashboard
     if (doc.containsKey("humidifier")) {
       humidifierState = doc["humidifier"];
+      manualOverride = true;
       digitalWrite(RELAY_HUMIDIFIER, humidifierState ? RELAY_ON : RELAY_OFF);
+      Serial.printf("-> Humidifier diatur MANUAL: %s\n", humidifierState ? "ON" : "OFF");
     }
-    if (doc.containsKey("servo_angle")) {
-      currentServoAngle = doc["servo_angle"];
-      eggServo.write(currentServoAngle);
+
+    // 2. Setpoint Dinamis dari AI Engine Sesuai Siklus Fase Telur Entok
+    if (doc.containsKey("target_humidity")) {
+      float newTarget = doc["target_humidity"];
+      hum_target_min = newTarget - 3.0;
+      hum_target_max = newTarget + 3.0;
+      manualOverride = false; // Kembali ke kontrol otomatis AI
+      Serial.printf("-> AI memperbarui setpoint kelembapan: %.1f%% (Rentang: %.1f - %.1f%%)\n",
+                    newTarget, hum_target_min, hum_target_max);
+    }
+
+    // 3. Reset ke Mode Otomatis
+    if (doc.containsKey("control_mode") && String(doc["control_mode"].as<const char*>()) == "AUTO") {
+      manualOverride = false;
+      Serial.println("-> Kembali ke Mode OTOMATIS");
     }
   }
 }
 
+// -------------------------------------------------------------------------
+// 5. Inisialisasi Wi-Fi
+// -------------------------------------------------------------------------
 void setup_wifi() {
   delay(10);
   Serial.print("\nMenghubungkan ke Wi-Fi: ");
@@ -127,67 +125,52 @@ void setup_wifi() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWi-Fi Terhubung! IP: " + WiFi.localIP().toString());
+    Serial.println("\n[Wi-Fi] Terhubung! IP Address: " + WiFi.localIP().toString());
   } else {
-    Serial.println("\nGagal terhubung ke Wi-Fi.");
+    Serial.println("\n[Wi-Fi] Gagal terhubung (Timeout). Cek SSID dan password.");
   }
 }
 
+// -------------------------------------------------------------------------
+// 6. Koneksi Ulang MQTT
+// -------------------------------------------------------------------------
 void reconnect_mqtt() {
   while (!client.connected() && WiFi.status() == WL_CONNECTED) {
     Serial.print("Menghubungkan ke MQTT HiveMQ...");
-    String clientId = "ESP32_Entok_" + String(random(0xffff), HEX);
+    String clientId = "ESP32_Netesin_" + String(random(0xffff), HEX);
 
+    // Kirim LWT (Last Will and Testament) jika perangkat tiba-tiba mati
     if (client.connect(clientId.c_str(), topic_status, 1, true, "{\"status\":\"offline\"}")) {
       Serial.println(" Terhubung!");
       client.publish(topic_status, "{\"status\":\"online\"}", true);
       client.subscribe(topic_control);
+      Serial.printf("Berlangganan topik kontrol: %s\n", topic_control);
     } else {
       Serial.print(" Gagal, rc=");
       Serial.print(client.state());
-      Serial.println(" Coba lagi dalam 4 detik...");
+      Serial.println(". Coba lagi dalam 4 detik...");
       delay(4000);
       break;
     }
   }
 }
 
+// -------------------------------------------------------------------------
+// 7. Setup Awal
+// -------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n=== Memulai Sistem Inkubator Telur Entok ESP32 ===");
+  Serial.println("\n========================================================");
+  Serial.println("  NETESIN: INKUBATOR TELUR ENTOK BERBASIS ESP32 & AI    ");
+  Serial.println("  Konfigurasi: DHT22 (GPIO 4) & Humidifier (GPIO 27)    ");
+  Serial.println("========================================================");
 
-  // Inisialisasi Pin Output Relay
-  pinMode(RELAY_HEATER, OUTPUT);
-  pinMode(RELAY_FAN, OUTPUT);
+  // Inisialisasi Relay Humidifier (Active LOW, awal mati)
   pinMode(RELAY_HUMIDIFIER, OUTPUT);
-  pinMode(PIN_BUZZER, OUTPUT);
-
-  // Default awal (Active LOW): Pemanas mati, Fan menyala
-  digitalWrite(RELAY_HEATER, RELAY_OFF);
-  digitalWrite(RELAY_FAN, RELAY_ON);
   digitalWrite(RELAY_HUMIDIFIER, RELAY_OFF);
-  digitalWrite(PIN_BUZZER, LOW);
 
-  // Inisialisasi Servo SG90
-  eggServo.attach(PIN_SERVO);
-  eggServo.write(currentServoAngle);
-
-  // Inisialisasi Sensor
-  dsSensor.begin();
+  // Inisialisasi Sensor DHT22
   dht.begin();
-
-  // Inisialisasi OLED (GPIO 21 SDA, GPIO 22 SCL)
-  Wire.begin(21, 22);
-  if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.setCursor(5, 10);
-    display.println("NETESIN IOT UNTIDAR");
-    display.setCursor(5, 25);
-    display.println("Connecting WiFi...");
-    display.display();
-  }
 
   // Koneksi Jaringan
   setup_wifi();
@@ -195,6 +178,9 @@ void setup() {
   client.setCallback(callback);
 }
 
+// -------------------------------------------------------------------------
+// 8. Loop Utama
+// -------------------------------------------------------------------------
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     setup_wifi();
@@ -205,83 +191,78 @@ void loop() {
   }
   client.loop();
 
-  // Pembacaan sensor dan kontrol tiap interval
   unsigned long now = millis();
   if (now - lastPublishTime >= publishInterval) {
     lastPublishTime = now;
 
-    // 1. Baca Sensor DHT22 (GPIO 4)
-    float tDHT = dht.readTemperature();
-    float hDHT = dht.readHumidity();
-    if (!isnan(tDHT) && tDHT > 0.0) tempAmbientDHT = tDHT;
-    if (!isnan(hDHT) && hDHT > 0.0) humidityDHT = hDHT;
+    // 1. Membaca Suhu & Kelembapan dari DHT22
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
 
-    // 2. Baca Sensor DS18B20 (jika terpasang di GPIO 5)
-    dsSensor.requestTemperatures();
-    float tDS = dsSensor.getTempCByIndex(0);
-    if (tDS > 5.0 && tDS < 70.0 && tDS != 85.0 && tDS != DEVICE_DISCONNECTED_C) {
-      tempCoreDS = tDS;
+    if (!isnan(t) && t > 0.0) {
+      currentTemp = t;
     } else {
-      // Jika probe DS18B20 belum dicolok ke GPIO 5, otomatis gunakan suhu dari DHT22
-      tempCoreDS = tempAmbientDHT;
+      Serial.println("[WARNING] Gagal membaca suhu dari DHT22!");
     }
 
-    // Suhu aktif yang digunakan untuk kontrol mikrokontroler
-    float activeTemp = (tempCoreDS > 0) ? tempCoreDS : tempAmbientDHT;
-
-    // 3. Logika Kontrol Suhu Otomatis
-    if (activeTemp < temp_target_min) {
-      heaterState = true;
-      digitalWrite(RELAY_HEATER, RELAY_ON); // Relay ON (Active LOW)
-    } else if (activeTemp >= temp_target_max) {
-      heaterState = false;
-      digitalWrite(RELAY_HEATER, RELAY_OFF);
+    if (!isnan(h) && h > 0.0) {
+      currentHumidity = h;
+    } else {
+      Serial.println("[WARNING] Gagal membaca kelembapan dari DHT22!");
     }
 
-    // 4. Logika Kontrol Kelembapan
-    if (humidityDHT < hum_target_min) {
-      humidifierState = true;
-      digitalWrite(RELAY_HUMIDIFIER, RELAY_ON);
-    } else if (humidityDHT >= hum_target_max) {
-      humidifierState = false;
-      digitalWrite(RELAY_HUMIDIFIER, RELAY_OFF);
+    // 2. Logika Kontrol Kelembapan Otomatis (Jika tidak sedang manual override)
+    if (!manualOverride) {
+      if (currentHumidity > 0.0) {
+        if (currentHumidity < hum_target_min) {
+          humidifierState = true;
+          digitalWrite(RELAY_HUMIDIFIER, RELAY_ON);
+        } else if (currentHumidity >= hum_target_max) {
+          humidifierState = false;
+          digitalWrite(RELAY_HUMIDIFIER, RELAY_OFF);
+        }
+      }
     }
 
-    // 5. Update Layar OLED
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(0, 0);
-    display.println("NETESIN - ENTOK 2026");
-    display.drawLine(0, 10, 128, 10, WHITE);
-    display.setCursor(0, 16);
-    display.printf("Suhu DS : %.1f C\n", tempCoreDS);
-    display.setCursor(0, 28);
-    display.printf("Suhu DHT: %.1f C\n", tempAmbientDHT);
-    display.setCursor(0, 40);
-    display.printf("Lembap  : %.1f %%\n", humidityDHT);
-    display.setCursor(0, 52);
-    display.printf("Heat:%s Fan:%s\n", heaterState ? "ON" : "OFF", fanState ? "ON" : "OFF");
-    display.display();
-
-    // 6. Kirim Telemetri JSON ke MQTT HiveMQ
-    StaticJsonDocument<384> payloadDoc;
-    payloadDoc["temperature"]  = serialized(String(activeTemp, 1));
-    payloadDoc["temp_ds18b20"] = serialized(String(tempCoreDS, 2));
-    payloadDoc["temp_dht22"]   = serialized(String(tempAmbientDHT, 2));
-    payloadDoc["humidity"]     = serialized(String(humidityDHT, 1));
-    payloadDoc["heater"]       = heaterState;
+    // 3. Format dan Kirim Telemetri JSON
+    StaticJsonDocument<256> payloadDoc;
+    payloadDoc["temperature"]  = ((int)(currentTemp * 10)) / 10.0;
+    payloadDoc["temp_dht22"]   = ((int)(currentTemp * 10)) / 10.0;
+    payloadDoc["humidity"]     = ((int)(currentHumidity * 10)) / 10.0;
     payloadDoc["humidifier"]   = humidifierState;
-    payloadDoc["fan"]          = fanState;
-    payloadDoc["servo_angle"]  = currentServoAngle;
     payloadDoc["status"]       = "online";
     payloadDoc["uptime_sec"]   = millis() / 1000;
+    payloadDoc["device_id"]    = "ESP32-INKUBATOR-ENTOK-01";
 
-    char buffer[384];
+    char buffer[256];
     serializeJson(payloadDoc, buffer);
-    client.publish(topic_telemetry, buffer);
 
-    Serial.printf("[TELEMETRI] Suhu: %.1f C | Lembap: %.1f %% | Heat:%s | Fan:%s\n",
-                  activeTemp, humidityDHT, heaterState ? "ON" : "OFF", fanState ? "ON" : "OFF");
+    bool mqttSent = false;
+    if (client.connected()) {
+      mqttSent = client.publish(topic_telemetry, buffer);
+      if (mqttSent) {
+        Serial.printf("[MQTT SUKSES TERKIRIM KE WEB] %s\n", buffer);
+      } else {
+        Serial.println("[MQTT ERROR] Gagal publish ke HiveMQ!");
+      }
+    }
+
+    // Jika MQTT gagal/terblokir, kirim langsung via HTTP POST ke Server Netesin
+    if (!mqttSent && enable_http_backup && WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      http.begin(server_url);
+      http.addHeader("Content-Type", "application/json");
+      int httpCode = http.POST(buffer);
+      if (httpCode == 200 || httpCode == 201) {
+        Serial.printf("[HTTP POST SUKSES REAL-TIME KE WEB] %s\n", buffer);
+      } else {
+        Serial.printf("[HTTP POST GAGAL] Kode respons: %d\n", httpCode);
+      }
+      http.end();
+    }
+
+    Serial.printf("[SENSOR DHT22] Suhu: %.1f C | Lembap: %.1f %% | Humidifier: %s (Mode: %s)\n",
+                  currentTemp, currentHumidity, humidifierState ? "ON" : "OFF",
+                  manualOverride ? "MANUAL" : "AUTO");
   }
 }
-

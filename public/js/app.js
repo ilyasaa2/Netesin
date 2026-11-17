@@ -140,7 +140,7 @@
     const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
     const textColor = isDark ? '#94a3b8' : '#64748b';
 
-    // Grafik Suhu
+    // Grafik Suhu DHT22
     const ctxTemp = document.getElementById('tempChart');
     if (ctxTemp && !state.charts.temp) {
       state.charts.temp = new Chart(ctxTemp, {
@@ -149,22 +149,12 @@
           labels: [],
           datasets: [
             {
-              label: 'Suhu Inti (DS18B20)',
-              borderColor: '#f59e0b',
-              backgroundColor: 'rgba(245, 158, 11, 0.15)',
-              borderWidth: 2,
+              label: 'Suhu Ruang (DHT22 °C)',
+              borderColor: '#059669',
+              backgroundColor: 'rgba(5, 150, 105, 0.12)',
+              borderWidth: 2.2,
               tension: 0.35,
-              fill: false,
-              data: []
-            },
-            {
-              label: 'Suhu Udara (DHT22)',
-              borderColor: '#0284c7',
-              backgroundColor: 'rgba(2, 132, 199, 0.1)',
-              borderWidth: 1.5,
-              borderDash: [4, 4],
-              tension: 0.35,
-              fill: false,
+              fill: true,
               data: []
             }
           ]
@@ -175,8 +165,8 @@
           animation: { duration: 300 },
           scales: {
             y: {
-              min: 35.0,
-              max: 40.0,
+              min: 20.0,
+              max: 45.0,
               grid: { color: gridColor },
               ticks: { color: textColor, callback: (v) => v + ' °C' }
             },
@@ -195,7 +185,7 @@
       });
     }
 
-    // Grafik Kelembapan
+    // Grafik Kelembapan DHT22
     const ctxHum = document.getElementById('humidityChart');
     if (ctxHum && !state.charts.humidity) {
       state.charts.humidity = new Chart(ctxHum, {
@@ -204,10 +194,10 @@
           labels: [],
           datasets: [
             {
-              label: 'Kelembapan Udara (RH %)',
-              borderColor: '#059669',
-              backgroundColor: 'rgba(5, 150, 105, 0.15)',
-              borderWidth: 2,
+              label: 'Kelembapan Udara (DHT22 % RH)',
+              borderColor: '#0284c7',
+              backgroundColor: 'rgba(2, 132, 199, 0.15)',
+              borderWidth: 2.2,
               tension: 0.35,
               fill: true,
               data: []
@@ -220,8 +210,8 @@
           animation: { duration: 300 },
           scales: {
             y: {
-              min: 40.0,
-              max: 90.0,
+              min: 20.0,
+              max: 100.0,
               grid: { color: gridColor },
               ticks: { color: textColor, callback: (v) => v + ' %' }
             },
@@ -257,16 +247,14 @@
     });
   }
 
-  function pushChartData(timeLabel, tempDS, tempDHT, humidity) {
+  function pushChartData(timeLabel, tempDHT, humidity) {
     if (state.charts.temp) {
       const chart = state.charts.temp;
       chart.data.labels.push(timeLabel);
-      chart.data.datasets[0].data.push(tempDS);
-      chart.data.datasets[1].data.push(tempDHT);
+      chart.data.datasets[0].data.push(tempDHT);
       if (chart.data.labels.length > 25) {
         chart.data.labels.shift();
         chart.data.datasets[0].data.shift();
-        chart.data.datasets[1].data.shift();
       }
       chart.update('none');
     }
@@ -348,7 +336,9 @@
     if (data.history && data.history.length > 0) {
       data.history.forEach(item => {
         const timeStr = new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        pushChartData(timeStr, item.temp_ds18b20, item.temp_dht22, item.humidity);
+        const tVal = Number(item.temp_dht22 || item.temperature || 37.5);
+        const hVal = Number(item.humidity || 60);
+        pushChartData(timeStr, tVal, hVal);
       });
     }
     if (data.activeBatch) {
@@ -363,7 +353,9 @@
     if (data.state) {
       updateUIFromState(data.state);
       const timeStr = new Date(data.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      pushChartData(timeStr, data.state.temp_ds18b20, data.state.temp_dht22, data.state.humidity);
+      const tVal = Number(data.state.temp_dht22 || data.state.temperature || 37.5);
+      const hVal = Number(data.state.humidity || 60);
+      pushChartData(timeStr, tVal, hVal);
     }
     if (data.aiHealth) {
       updateAIHealthUI(data.aiHealth);
@@ -377,94 +369,114 @@
   }
 
   // =========================================================================
-  // 6. Sinkronisasi UI dengan State Perangkat & Aktuator
+  // 6. Sinkronisasi UI Monitoring (Fokus DHT22 & Humidifier)
   // =========================================================================
   function updateUIFromState(dev) {
     state.device = { ...state.device, ...dev };
 
-    // Update Metrik Utama
-    const elTempDS = document.getElementById('valTempDS18B20');
+    const t = Number(dev.temp_dht22 || dev.temperature || 37.5);
+    const h = Number(dev.humidity || 60.0);
+    const isHumidifierOn = Boolean(dev.humidifier);
+
+    // 1. Update Metrik Suhu DHT22
     const elTempDHT = document.getElementById('valTempDHT22');
-    const elHum = document.getElementById('valHumidity');
-
-    if (elTempDS) elTempDS.textContent = dev.temp_ds18b20.toFixed(2);
-    if (elTempDHT) elTempDHT.textContent = dev.temp_dht22.toFixed(2);
-    if (elHum) elHum.textContent = dev.humidity.toFixed(1);
-
-    // Indikator Suhu Aman / Bahaya
-    const badgeTempDS = document.getElementById('badgeTempDS18B20');
-    if (badgeTempDS) {
-      if (dev.temp_ds18b20 > 38.6) {
-        badgeTempDS.textContent = '▲ Suhu Panas (Di Atas Batas)';
-        badgeTempDS.style.color = 'var(--rose-danger)';
-      } else if (dev.temp_ds18b20 < 37.4) {
-        badgeTempDS.textContent = '▼ Suhu Dingin (Pemanas Diperlukan)';
-        badgeTempDS.style.color = 'var(--amber-heat)';
+    const badgeTempDHT = document.getElementById('badgeTempDHT22');
+    if (elTempDHT) elTempDHT.textContent = t.toFixed(1);
+    if (badgeTempDHT) {
+      if (t > 38.6) {
+        badgeTempDHT.textContent = '▲ Suhu Panas (>38.6°C)';
+        badgeTempDHT.style.color = 'var(--rose-danger)';
+      } else if (t < 36.8) {
+        badgeTempDHT.textContent = '▼ Suhu Rendah (<36.8°C)';
+        badgeTempDHT.style.color = 'var(--amber-heat)';
       } else {
-        badgeTempDS.textContent = '● Target Ideal (37.5 - 38.5°C)';
-        badgeTempDS.style.color = 'var(--emerald-primary)';
+        badgeTempDHT.textContent = '● Suhu Optimal (37.0 - 38.5°C)';
+        badgeTempDHT.style.color = 'var(--emerald-primary)';
       }
     }
 
-    // Hardware source pill
+    // 2. Update Metrik Kelembapan DHT22
+    const elHum = document.getElementById('valHumidity');
+    const badgeHum = document.getElementById('badgeHumidity');
+    if (elHum) elHum.textContent = h.toFixed(1);
+    if (badgeHum) {
+      if (h < 50) {
+        badgeHum.textContent = '▼ Kelembapan Rendah (<50%)';
+        badgeHum.style.color = 'var(--rose-danger)';
+      } else if (h > 80) {
+        badgeHum.textContent = '▲ Kelembapan Sangat Tinggi (>80%)';
+        badgeHum.style.color = 'var(--amber-heat)';
+      } else {
+        badgeHum.textContent = '● Kelembapan Ideal (55 - 68%)';
+        badgeHum.style.color = 'var(--sky-moisture)';
+      }
+    }
+
+    // 3. Update Status Humidifier (Monitoring Visual)
+    const badgeHumText = document.getElementById('badgeHumidifierText');
+    const badgeHumSub = document.getElementById('badgeHumidifierSub');
+    const humidPill = document.getElementById('humidifierOperationalPill');
+    const humidRelay = document.getElementById('humidifierRelayStatus');
+    const humidIcon = document.getElementById('humidifierPulseIcon');
+
+    if (badgeHumText) {
+      badgeHumText.textContent = isHumidifierOn ? 'PENGKABUTAN' : 'STANDBY';
+      badgeHumText.style.color = isHumidifierOn ? 'var(--sky-moisture)' : 'var(--text-muted)';
+    }
+    if (badgeHumSub) {
+      badgeHumSub.textContent = isHumidifierOn ? 'Sedang menaikkan kelembapan' : 'Kelembapan terpenuhi, standby';
+      badgeHumSub.style.color = isHumidifierOn ? 'var(--sky-moisture)' : 'var(--text-muted)';
+    }
+    if (humidPill) {
+      humidPill.textContent = isHumidifierOn ? 'AKTIF (ON)' : 'STANDBY (OFF)';
+      humidPill.style.backgroundColor = isHumidifierOn ? 'var(--sky-subtle)' : 'var(--bg-elevated)';
+      humidPill.style.color = isHumidifierOn ? 'var(--sky-moisture)' : 'var(--text-muted)';
+    }
+    if (humidRelay) {
+      humidRelay.textContent = isHumidifierOn ? 'Relay GPIO 27: AKTIF (Menyala)' : 'Relay GPIO 27: STANDBY (Mati)';
+      humidRelay.style.color = isHumidifierOn ? 'var(--sky-moisture)' : 'var(--text-main)';
+    }
+    if (humidIcon) {
+      humidIcon.textContent = isHumidifierOn ? '💨' : '💤';
+    }
+
+    // 4. Hardware Source Pill di Header
     const hwText = document.getElementById('hardwareModeText');
+    const hwPill = document.getElementById('hardwareModePill');
     if (hwText) {
-      hwText.textContent = dev.hardware_source === 'PHYSICAL_ESP32' ? 'ESP32 Fisik (Online)' : 'Simulator ESP32';
+      if (dev.hardware_source === 'PHYSICAL_ESP32') {
+        hwText.textContent = 'ESP32 Fisik (Real-time Aktif)';
+        if (hwPill) {
+          hwPill.style.borderColor = 'var(--emerald-primary)';
+          hwPill.style.color = 'var(--emerald-primary)';
+        }
+      } else {
+        hwText.textContent = 'Simulator / Standby (Menunggu ESP32)';
+        if (hwPill) {
+          hwPill.style.borderColor = 'var(--amber-heat)';
+          hwPill.style.color = 'var(--amber-heat)';
+        }
+      }
     }
 
-    // Aktuator Cards Status
-    updateActuatorItem('actuatorCardHeater', 'badgeHeater', dev.heater, 'active-heater', 'AKTIF', 'MATI');
-    updateActuatorItem('actuatorCardFan', 'badgeFan', dev.fan, 'active-fan', 'AKTIF', 'MATI');
-    updateActuatorItem('actuatorCardHumidifier', 'badgeHumidifier', dev.humidifier, 'active-humidifier', 'AKTIF', 'MATI');
-    updateActuatorItem('actuatorCardBuzzer', 'badgeBuzzer', dev.buzzer, 'active-alarm', 'BUNYI ALARM', 'NORMAL');
-
-    // Jika buzzer aktif dan baru menyala, bunyikan web synthesizer beep
-    if (dev.buzzer) {
-      playBuzzerBeep(200, 1050);
+    // 5. Update Status Pasokan Air Humidifier
+    const waterStatus = document.getElementById('waterSupplyStatus');
+    if (waterStatus) {
+      if (state.waterDepleted) {
+        waterStatus.textContent = '⚠️ Air Habis / Perlu Diisi';
+        waterStatus.style.color = 'var(--rose-danger)';
+      } else {
+        waterStatus.textContent = '● Pasokan Air Normal';
+        waterStatus.style.color = 'var(--emerald-primary)';
+      }
     }
 
-    // Animasi Kemiringan Rak Telur (Tilting Servo)
-    const trayBar = document.getElementById('trayBarVisual');
-    const servoAngleBadge = document.getElementById('servoAngleBadge');
-    if (trayBar) {
-      // Rotasikan visualizer sesuai sudut derajat servo (-45 s/d 45)
-      const angle = dev.servo_angle || 0;
-      trayBar.style.transform = `rotate(${angle / 2.5}deg)`;
-    }
-    if (servoAngleBadge) {
-      if (dev.servo_angle > 0) servoAngleBadge.textContent = `+${dev.servo_angle}° Kanan`;
-      else if (dev.servo_angle < 0) servoAngleBadge.textContent = `${dev.servo_angle}° Kiri`;
-      else servoAngleBadge.textContent = '0° Posisi Datar';
-    }
-
-    // Hitung Mundur Putaran Berikutnya
-    const countdownEl = document.getElementById('nextTurnCountdown');
-    if (countdownEl && dev.next_turn_seconds !== undefined) {
-      const hrs = Math.floor(dev.next_turn_seconds / 3600);
-      const mins = Math.floor((dev.next_turn_seconds % 3600) / 60);
-      const secs = dev.next_turn_seconds % 60;
-      countdownEl.textContent = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-
-    // Mode Kendali Pill & Switcher
-    const modePill = document.getElementById('controlModePill');
-    const modeToggle = document.getElementById('modeToggleCheckbox');
-    const modeLabel = document.getElementById('modeToggleLabel');
-
-    if (modePill) {
-      const isAuto = dev.control_mode === 'AUTO';
-      modePill.textContent = isAuto ? 'MODE OTOMATIS' : 'MODE MANUAL (OVERRIDE)';
-      modePill.style.backgroundColor = isAuto ? 'var(--emerald-subtle)' : 'var(--amber-subtle)';
-      modePill.style.color = isAuto ? 'var(--emerald-primary)' : 'var(--amber-heat)';
-    }
-    if (modeToggle) {
-      modeToggle.checked = dev.control_mode === 'MANUAL';
-    }
+    const modeLabel = document.getElementById('modeLabel');
     if (modeLabel) {
       modeLabel.textContent = dev.control_mode === 'MANUAL' ? 'Mode Manual (Aktif)' : 'Mode Otomatis (AI)';
     }
 
-    // Update Penampang SVG Digital Twin (Sesuai Prototipe Fisik)
+    // Update Penampang SVG Digital Twin jika elemen tersedia
     const svgDigitalTemp = document.getElementById('svgDigitalTemp');
     if (svgDigitalTemp && dev.temp_ds18b20 !== undefined) {
       svgDigitalTemp.textContent = dev.temp_ds18b20.toFixed(1);
@@ -531,6 +543,18 @@
     const title = document.getElementById('anomalyTitle');
     const msg = document.getElementById('anomalyMessage');
     const action = document.getElementById('anomalyAction');
+
+    state.waterDepleted = Boolean(anomalies && anomalies.some(a => a.id === 'humidifier_water_depleted'));
+    const waterStatus = document.getElementById('waterSupplyStatus');
+    if (waterStatus) {
+      if (state.waterDepleted) {
+        waterStatus.textContent = '⚠️ Air Habis / Perlu Diisi';
+        waterStatus.style.color = 'var(--rose-danger)';
+      } else {
+        waterStatus.textContent = '● Pasokan Air Normal';
+        waterStatus.style.color = 'var(--emerald-primary)';
+      }
+    }
 
     if (!banner) return;
 
@@ -935,19 +959,19 @@
     fetch('/api/database/config')
       .then(res => res.json())
       .then(cfg => {
-        if (selectProvider) selectProvider.value = cfg.provider || 'FIREBASE';
+        if (selectProvider) selectProvider.value = cfg.provider || 'SUPABASE';
         if (inputDbUrl) inputDbUrl.value = cfg.url || '';
         if (inputDbKey) inputDbKey.value = cfg.apiKey || '';
-        if (inputDbTable) inputDbTable.value = cfg.tableName || 'telemetry_logs';
+        if (inputDbTable) inputDbTable.value = cfg.tableName || 'telemetry';
         if (chkEnableDb) chkEnableDb.checked = Boolean(cfg.enabled);
         if (valTotalSynced) valTotalSynced.textContent = cfg.totalSyncedCount || 0;
         if (badgeDbStatus) {
           if (cfg.enabled) {
-            badgeDbStatus.textContent = 'Cloud Sync Aktif (' + cfg.provider + ')';
+            badgeDbStatus.textContent = 'Cloud Sync Aktif (' + (cfg.provider || 'SUPABASE') + ')';
             badgeDbStatus.style.backgroundColor = 'var(--emerald-subtle)';
             badgeDbStatus.style.color = 'var(--emerald-primary)';
           } else {
-            badgeDbStatus.textContent = 'Lokal (Siap Sinkron Cloud)';
+            badgeDbStatus.textContent = 'Lokal (Siap Sinkron Supabase)';
             badgeDbStatus.style.backgroundColor = 'var(--amber-subtle)';
             badgeDbStatus.style.color = 'var(--amber-heat)';
           }
@@ -1005,6 +1029,18 @@
             btnTestDb.disabled = false;
             btnTestDb.textContent = '🧪 Uji Sambungan Cloud Database';
           });
+      });
+    }
+
+    const copySqlBtn = document.getElementById('btnCopySqlSchema');
+    if (copySqlBtn) {
+      copySqlBtn.addEventListener('click', () => {
+        const sqlCode = document.getElementById('supabaseSqlCode');
+        if (sqlCode) {
+          navigator.clipboard.writeText(sqlCode.textContent).then(() => {
+            alert('Query SQL Tabel Supabase berhasil disalin ke clipboard!');
+          });
+        }
       });
     }
 

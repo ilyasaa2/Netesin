@@ -14,6 +14,18 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const cors = require('cors');
+const fs = require('fs');
+
+// Muat variabel lingkungan (.env) jika file tersedia
+try {
+  const envPath = path.join(__dirname, '.env');
+  if (fs.existsSync(envPath) && typeof process.loadEnvFile === 'function') {
+    process.loadEnvFile(envPath);
+    console.log('[ENV] Berhasil memuat konfigurasi dari .env');
+  }
+} catch (e) {
+  console.warn('[ENV] Catatan:', e.message);
+}
 
 const aiEngine = require('./lib/ai-engine');
 const IoTSimulator = require('./lib/iot-simulator');
@@ -54,16 +66,26 @@ function broadcastWebSocket(data) {
 // Inisialisasi Jembatan MQTT ke Broker HiveMQ (Mendukung Kode ESP32 Lama & Baru)
 const mqttBridge = new MqttBridge(iotSim, aiEngine, db, broadcastWebSocket);
 
-// Timer periodik (setiap 1 detik): Simpan ke histori DB & Broadcast ke web client
+// Timer periodik (setiap 1 detik): Evaluasi status, AI, & Broadcast ke web client
 setInterval(() => {
   const state = iotSim.getState();
+
+  // Watchdog koneksi ESP32 Fisik: jika tidak ada kiriman data lebih dari 15 detik, beralih ke standby/simulator
+  if (state.hardware_source === 'PHYSICAL_ESP32') {
+    const timeSinceLast = Date.now() - (iotSim.lastPhysicalTime || 0);
+    if (timeSinceLast > 15000) {
+      iotSim.deviceState.hardware_source = 'SIMULATOR';
+      console.warn(`[WATCHDOG ESP32] Lebih dari 15 detik tidak ada data telemetri, otomatis standby.`);
+    }
+  }
+
   const history = db.getTelemetryHistory(60);
 
   // Jalankan AI Analisis Real-time
   const aiHealth = aiEngine.calculateHatchingHealth(history, state.currentDay, state.totalTurnsDone, state.expectedTurns);
   const anomalies = aiEngine.detectAnomalies(state, history);
 
-  // Jika ada anomali berstatus CRITICAL yang baru, catat ke log alert DB
+  // Catat anomali berstatus CRITICAL (dengan deduplikasi otomatis di db.logAlert)
   if (anomalies.length > 0) {
     anomalies.forEach(anomaly => {
       if (anomaly.severity === "CRITICAL") {
@@ -77,25 +99,27 @@ setInterval(() => {
     });
   }
 
-  // Rekam ke riwayat telemetri
-  db.addTelemetryRecord({
-    timestamp: new Date().toISOString(),
-    temp_ds18b20: state.temp_ds18b20,
-    temp_dht22: state.temp_dht22,
-    humidity: state.humidity,
-    heater: state.heater,
-    fan: state.fan,
-    humidifier: state.humidifier,
-    servo_angle: state.servo_angle,
-    buzzer: state.buzzer
-  });
+  // Rekam riwayat simulasi hanya jika mode SIMULATOR (data fisik direkam langsung saat tiba)
+  if (state.hardware_source === 'SIMULATOR') {
+    db.addTelemetryRecord({
+      timestamp: new Date().toISOString(),
+      temp_ds18b20: state.temp_ds18b20,
+      temp_dht22: state.temp_dht22,
+      humidity: state.humidity,
+      heater: state.heater,
+      fan: state.fan,
+      humidifier: state.humidifier,
+      servo_angle: state.servo_angle,
+      buzzer: state.buzzer
+    });
+  }
 
-  // Sinkronisasi berkala ke Database Eksternal Cloud (setiap 10 detik jika diaktifkan)
+  // Sinkronisasi berkala ke Database Eksternal Cloud Supabase (setiap 10 detik jika diaktifkan)
   if (state.uptime_seconds % 10 === 0) {
     db.syncToExternalDatabase(state);
   }
 
-  // Paket data streaming ke frontend
+  // Paket data streaming ke frontend web secara real-time
   const livePacket = {
     type: "TELEMETRY_UPDATE",
     timestamp: new Date().toISOString(),
@@ -131,6 +155,7 @@ wss.on('connection', (ws) => {
       const parsed = JSON.parse(message);
       if (parsed.type === "CONTROL_COMMAND") {
         iotSim.setActuatorControl(parsed.controls);
+        mqttBridge.publishControl(parsed.controls);
       }
     } catch (e) {
       console.error("Kesalahan parsing WS pesan:", e.message);
@@ -149,9 +174,45 @@ app.post('/api/telemetry', (req, res) => {
     return res.status(400).json({ error: "Payload kosong" });
   }
 
+  // 1. Ingest ke IoT Simulator (mengalihkan ke mode PHYSICAL_ESP32)
   iotSim.ingestPhysicalTelemetry(payload);
 
   const state = iotSim.getState();
+
+  // 2. Simpan rekaman telemetri langsung ke riwayat DB
+  db.addTelemetryRecord({
+    timestamp: new Date().toISOString(),
+    temp_ds18b20: state.temp_ds18b20,
+    temp_dht22: state.temp_dht22,
+    humidity: state.humidity,
+    heater: state.heater,
+    fan: state.fan,
+    humidifier: state.humidifier,
+    servo_angle: state.servo_angle,
+    buzzer: state.buzzer,
+    hardware_source: 'PHYSICAL_ESP32'
+  });
+
+  // 3. Evaluasi AI & Anomali
+  const history = db.getTelemetryHistory(60);
+  const aiHealth = aiEngine.calculateHatchingHealth(history, state.currentDay, state.totalTurnsDone, state.expectedTurns);
+  const anomalies = aiEngine.detectAnomalies(state, history);
+
+  // 4. Broadcast real-time langsung ke semua client web via WebSocket!
+  broadcastWebSocket({
+    type: "TELEMETRY_UPDATE",
+    timestamp: new Date().toISOString(),
+    state,
+    aiHealth,
+    anomalies,
+    activeBatch: db.getActiveBatch()
+  });
+
+  // 5. Sinkronisasi data ESP32 fisik secara real-time ke Supabase (jika diaktifkan)
+  db.syncToExternalDatabase(state);
+
+  console.log(`[HTTP IN TELEMETRI ESP32] Suhu: ${state.temp_dht22.toFixed(1)}°C | Lembap: ${state.humidity.toFixed(1)}% | Humidifier: ${state.humidifier ? 'ON' : 'OFF'}`);
+
   return res.json({
     status: "SUCCESS",
     server_time: new Date().toISOString(),
